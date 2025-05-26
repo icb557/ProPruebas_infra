@@ -10,7 +10,7 @@ variable "env" {
 
 variable "allowed_ips" {
   type    = list(string)
-  default = ["181.51.33.104/32"]
+  default = ["181.51.32.104/32"]
 }
 
 variable "vpc_cidr" {

@@ -48,7 +48,7 @@ resource "aws_route_table" "demo1_public_rt" {
   vpc_id = aws_vpc.demo1.id
 
   tags = {
-    Name = "demo1_public_subnets__rt"
+    Name = "demo1_public_rt"
     Env  = "${var.env}"
   }
 }
@@ -82,25 +82,28 @@ resource "aws_route_table_association" "demo1_private_rt_assoc" {
 }
 
 resource "aws_network_acl" "demo1_public_sub_acl" {
+  for_each = aws_subnet.demo1_public_subnet
   vpc_id = aws_vpc.demo1.id
 
   tags = {
-    Name = "demo1_public_sub_acl"
+    Name = "demo1_${each.key}_acl"
     Env  = "${var.env}"
   }
 }
 
 resource "aws_network_acl" "demo1_private_sub_acl" {
+  for_each = var.private_subnets
   vpc_id = aws_vpc.demo1.id
 
   tags = {
-    Name = "demo1_private_sub_acl"
+    Name = "demo1_${each.key}_acl"
     Env  = "${var.env}"
   }
 }
-
+#####
 resource "aws_network_acl_rule" "allow_in_http_acl" {
-  network_acl_id = aws_network_acl.demo1_public_sub_acl.id
+  for_each       = var.public_subnets
+  network_acl_id = aws_network_acl.demo1_public_sub_acl[each.key].id
   rule_number    = 100
   egress         = false
   protocol       = "tcp"
@@ -111,7 +114,8 @@ resource "aws_network_acl_rule" "allow_in_http_acl" {
 }
 
 resource "aws_network_acl_rule" "allow_in_https_acl" {
-  network_acl_id = aws_network_acl.demo1_public_sub_acl.id
+  for_each       = var.public_subnets
+  network_acl_id = aws_network_acl.demo1_public_sub_acl[each.key].id
   rule_number    = 110
   egress         = false
   protocol       = "tcp"
@@ -122,31 +126,44 @@ resource "aws_network_acl_rule" "allow_in_https_acl" {
 }
 
 resource "aws_network_acl_rule" "allow_in_ssh_acl" {
-  for_each       = toset(local.admins_ips)
-  network_acl_id = aws_network_acl.demo1_public_sub_acl.id
+  for_each       = local.public_acl_ip_pairs
+  network_acl_id = each.value.acl_id
   rule_number    = 120
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block     = each.value
+  cidr_block     = each.value.ip
   from_port      = 22
   to_port        = 22
 }
 
-resource "aws_network_acl_rule" "allow_in_jenkins_acl" {
-  for_each       = toset(local.admins_ips)
-  network_acl_id = aws_network_acl.demo1_public_sub_acl.id
-  rule_number    = 130
-  egress         = false
-  protocol       = "tcp"
-  rule_action    = "allow"
-  cidr_block     = each.value
-  from_port      = 8080
-  to_port        = 8080
-}
+# resource "aws_network_acl_rule" "allow_in_ssh_acl1" {
+#   for_each       = toset(local.admins_ips)
+#   network_acl_id = aws_network_acl.demo1_public_sub_acl1.id
+#   rule_number    = 120
+#   egress         = false
+#   protocol       = "tcp"
+#   rule_action    = "allow"
+#   cidr_block     = each.value
+#   from_port      = 22
+#   to_port        = 22
+# }
+
+# resource "aws_network_acl_rule" "allow_in_ssh_acl2" {
+#   for_each       = toset(local.admins_ips)
+#   network_acl_id = aws_network_acl.demo1_public_sub_acl2.id
+#   rule_number    = 120
+#   egress         = false
+#   protocol       = "tcp"
+#   rule_action    = "allow"
+#   cidr_block     = each.value
+#   from_port      = 22
+#   to_port        = 22
+# }
 
 resource "aws_network_acl_rule" "allow_in_ephemeral_ports_acl" {
-  network_acl_id = aws_network_acl.demo1_public_sub_acl.id
+  for_each       = var.public_subnets
+  network_acl_id = aws_network_acl.demo1_public_sub_acl[each.key].id
   rule_number    = 140              
   egress         = false
   protocol       = "tcp"
@@ -157,7 +174,8 @@ resource "aws_network_acl_rule" "allow_in_ephemeral_ports_acl" {
 }
 
 resource "aws_network_acl_rule" "allow_in_db_acl" {
-  network_acl_id = aws_network_acl.demo1_private_sub_acl.id
+  for_each       = var.private_subnets
+  network_acl_id = aws_network_acl.demo1_private_sub_acl[each.key].id
   rule_number    = 100
   egress         = false
   protocol       = "tcp"
@@ -168,7 +186,8 @@ resource "aws_network_acl_rule" "allow_in_db_acl" {
 }
 
 resource "aws_network_acl_rule" "allow_out_pub_sub_acl" {
-  network_acl_id = aws_network_acl.demo1_public_sub_acl.id
+  for_each       = var.public_subnets
+  network_acl_id = aws_network_acl.demo1_public_sub_acl[each.key].id
   rule_number    = 100
   egress         = true
   protocol       = "tcp"
@@ -179,7 +198,8 @@ resource "aws_network_acl_rule" "allow_out_pub_sub_acl" {
 }
 
 resource "aws_network_acl_rule" "allow_inner_out_pub_sub_acl" {
-  network_acl_id = aws_network_acl.demo1_public_sub_acl.id
+  for_each       = var.public_subnets
+  network_acl_id = aws_network_acl.demo1_public_sub_acl[each.key].id
   rule_number    = 110
   egress         = true
   protocol       = "-1"
@@ -190,7 +210,8 @@ resource "aws_network_acl_rule" "allow_inner_out_pub_sub_acl" {
 }
 
 resource "aws_network_acl_rule" "allow_out_db_acl" {
-  network_acl_id = aws_network_acl.demo1_private_sub_acl.id
+  for_each       = var.private_subnets
+  network_acl_id = aws_network_acl.demo1_private_sub_acl[each.key].id
   rule_number    = 100
   egress         = true
   protocol       = "tcp"
@@ -201,20 +222,20 @@ resource "aws_network_acl_rule" "allow_out_db_acl" {
 }
 
 resource "aws_network_acl_association" "demo1_public_sub_acl_assoc" {
-  for_each       = var.public_subnets
-  network_acl_id = aws_network_acl.demo1_public_sub_acl.id
-  subnet_id      = aws_subnet.demo1_public_subnet[each.key].id
+  for_each       = aws_subnet.demo1_public_subnet
+  network_acl_id = aws_network_acl.demo1_public_sub_acl[each.key].id
+  subnet_id      = each.value.id
 }
 
 resource "aws_network_acl_association" "demo1_private_sub_acl_assoc" {
   for_each       = var.private_subnets
-  network_acl_id = aws_network_acl.demo1_private_sub_acl.id
+  network_acl_id = aws_network_acl.demo1_private_sub_acl[each.key].id
   subnet_id      = aws_subnet.demo1_private_subnet[each.key].id
 }
 
-resource "aws_security_group" "demo1_app_server_sg" {
-  name        = "demo1_app_server_sg"
-  description = "Manage inbound and outbound traffic for the app servers"
+resource "aws_security_group" "demo1_web_server_sg" {
+  name        = "demo1_web_server_sg"
+  description = "Manage inbound and outbound traffic for the web servers"
   vpc_id      = aws_vpc.demo1.id
 
   tags = {
@@ -222,9 +243,9 @@ resource "aws_security_group" "demo1_app_server_sg" {
   }
 }
 
-resource "aws_security_group" "demo1_cicd_server_sg" {
-  name        = "demo1_cicd_server_sg"
-  description = "Manage inbound and outbound traffic for the ci/cd servers"
+resource "aws_security_group" "demo1_app_server_sg" {
+  name        = "demo1_app_server_sg"
+  description = "Manage inbound and outbound traffic for the app servers"
   vpc_id      = aws_vpc.demo1.id
 
   tags = {
@@ -243,7 +264,8 @@ resource "aws_security_group" "demo1_db_server_sg" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "allow_in_http_traffic" {
-  security_group_id = aws_security_group.demo1_app_server_sg.id
+  for_each          = local.my_sgs
+  security_group_id = each.value
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = 80
   ip_protocol       = "tcp"
@@ -271,14 +293,13 @@ resource "aws_vpc_security_group_ingress_rule" "allow_in_ssh_traffic" {
   description       = "Allow inbound SSH from admins IPs"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "allow_in_http_jenkins_traffic" {
-  for_each          = toset(local.admins_ips)
-  security_group_id = aws_security_group.demo1_cicd_server_sg.id
-  cidr_ipv4         = each.value
-  from_port         = 8080
+resource "aws_vpc_security_group_ingress_rule" "allow_in_http_app_traffic" {
+  security_group_id = aws_security_group.demo1_app_server_sg.id
+  referenced_security_group_id = aws_security_group.demo1_web_server_sg.id
+  from_port         = 3000
   ip_protocol       = "tcp"
-  to_port           = 8080
-  description       = "Allow inbound HTTP from admins to access the jenkins dashboard"
+  to_port           = 3000
+  description       = "Allow inbound HTTP from admins to access the API endpoints"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "allow_in_db_traffic" {
@@ -290,17 +311,9 @@ resource "aws_vpc_security_group_ingress_rule" "allow_in_db_traffic" {
   description                  = "Allow inbound db traffic from app servers"
 }
 
-resource "aws_vpc_security_group_egress_rule" "allow_out_app_server_traffic" {
-  security_group_id = aws_security_group.demo1_app_server_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
-  from_port         = -1
-  ip_protocol       = "-1"
-  to_port           = -1
-  description       = "Allow outbound traffic to anywhere"
-}
-
-resource "aws_vpc_security_group_egress_rule" "allow_out_cicd_server_traffic" {
-  security_group_id = aws_security_group.demo1_cicd_server_sg.id
+resource "aws_vpc_security_group_egress_rule" "allow_out_server_traffic" {
+  for_each          = local.sg_ip_pairs
+  security_group_id = local.my_sgs[each.value.sg_key]
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = -1
   ip_protocol       = "-1"
@@ -322,13 +335,50 @@ resource "aws_key_pair" "demo1_ec2_key" {
   public_key = file("~/.ssh/demo1Ec2Key.pub")
 }
 
-resource "aws_network_interface" "ec2_nic1_as1" {
-  subnet_id       = values(aws_subnet.demo1_public_subnet)[0].id
+resource "aws_network_interface" "ec2_nic1_ws1" {
+  subnet_id       = aws_subnet.demo1_public_subnet["public_subnet1"].id
   private_ips     = ["10.0.0.100"]
+  security_groups = [aws_security_group.demo1_web_server_sg.id]
+
+  tags = {
+    Name = "ec2_nic1_ws1"
+  }
+}
+
+resource "aws_network_interface" "ec2_nic1_as1" {
+  subnet_id       = aws_subnet.demo1_public_subnet["public_subnet2"].id
+  private_ips     = ["10.0.1.100"]
   security_groups = [aws_security_group.demo1_app_server_sg.id]
 
   tags = {
     Name = "ec2_nic1_as1"
+  }
+}
+
+resource "aws_instance" "demo1_web_server1" {
+  ami           = data.aws_ami.server_ami.id
+  instance_type = "t2.micro"
+  key_name      = aws_key_pair.demo1_ec2_key.id
+  #user_data     = file("userdata.tpl")
+
+  network_interface {
+    network_interface_id = aws_network_interface.ec2_nic1_ws1.id
+    device_index         = 0
+  }
+
+  tags = {
+    Name = "demo1_web_server1"
+    Env  = "${var.env}"
+  }
+
+  #provisioner -> you can use ansible instead
+  provisioner "local-exec" {
+    command = templatefile("${var.host_os}-ssh-config.tpl", {
+      hostname     = self.public_ip
+      user         = "ubuntu"
+      identityfile = "~/.ssh/demo1Ec2Key"
+    })
+    interpreter = var.host_os == "windows" ? ["PowerShell", "-Command"] : ["bash", "-c"]
   }
 }
 
@@ -348,7 +398,6 @@ resource "aws_instance" "demo1_app_server1" {
     Env  = "${var.env}"
   }
 
-  #provisioner -> you can use ansible instead
   provisioner "local-exec" {
     command = templatefile("${var.host_os}-ssh-config.tpl", {
       hostname     = self.public_ip
