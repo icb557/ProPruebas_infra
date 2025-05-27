@@ -274,9 +274,9 @@ resource "aws_vpc_security_group_ingress_rule" "allow_in_http_traffic" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "allow_in_https_traffic" {
-  for_each          = local.sg_ip_pairs
-  security_group_id = local.my_sgs[each.value.sg_key]
-  cidr_ipv4         = each.value.ip
+  for_each          = local.my_sgs
+  security_group_id = each.value
+  cidr_ipv4         = "0.0.0.0/0"
   from_port         = 443
   ip_protocol       = "tcp"
   to_port           = 443
@@ -332,7 +332,7 @@ resource "aws_vpc_security_group_egress_rule" "allow_out_db_traffic" {
 
 resource "aws_key_pair" "demo1_ec2_key" {
   key_name   = "demo1_ec2_key"
-  public_key = file("~/.ssh/demo1Ec2Key.pub")
+  public_key = file("~/.ssh/pro_pruebas.pub")
 }
 
 resource "aws_network_interface" "ec2_nic1_ws1" {
@@ -359,7 +359,10 @@ resource "aws_instance" "demo1_web_server1" {
   ami           = data.aws_ami.server_ami.id
   instance_type = "t2.micro"
   key_name      = aws_key_pair.demo1_ec2_key.id
-  #user_data     = file("userdata.tpl")
+  user_data = templatefile("scripts/web_server_setup.tpl", {
+    backend_app_url    = "http://10.0.1.100:3000"
+    repo_url = var.repo_url
+  })
 
   network_interface {
     network_interface_id = aws_network_interface.ec2_nic1_ws1.id
@@ -371,22 +374,38 @@ resource "aws_instance" "demo1_web_server1" {
     Env  = "${var.env}"
   }
 
-  #provisioner -> you can use ansible instead
   provisioner "local-exec" {
-    command = templatefile("${var.host_os}-ssh-config.tpl", {
-      hostname     = self.public_ip
-      user         = "ubuntu"
-      identityfile = "~/.ssh/demo1Ec2Key"
-    })
-    interpreter = var.host_os == "windows" ? ["PowerShell", "-Command"] : ["bash", "-c"]
+    command = <<EOT
+      powershell.exe -File "${path.module}/scripts/deploy_frontend_windows.ps1" -WebServerPublicIp "${self.public_ip}" -SshPrivateKeyPath "${var.local_ssh_private_key_path_windows}" -RemoteUser "ubuntu" -RemoteAngularAppPath "/var/www/html/" -LocalFrontendProjectRoot "${abspath(var.local_propruebas_project_root_windows)}" -BackendAppUrlForFrontendBuild "http://${aws_instance.demo1_app_server1.private_ip}:3000"
+    EOT
+    interpreter = ["PowerShell", "-Command"]
+    when        = create
   }
+
+
+  # provisioner "local-exec" {
+  #   command = templatefile("${var.host_os}-ssh-config.tpl", {
+  #     hostname     = self.public_ip
+  #     user         = "ubuntu"
+  #     identityfile = "~/.ssh/demo1Ec2Key"
+  #   })
+  #   interpreter = var.host_os == "windows" ? ["PowerShell", "-Command"] : ["bash", "-c"]
+  # }
 }
 
 resource "aws_instance" "demo1_app_server1" {
   ami           = data.aws_ami.server_ami.id
   instance_type = "t2.micro"
   key_name      = aws_key_pair.demo1_ec2_key.id
-  #user_data     = file("userdata.tpl")
+  user_data = templatefile("scripts/app_server_setup.tpl", {
+    repo_url        = var.repo_url
+    app_cors_origin = var.app_cors_origin
+    app_secret_key  = var.app_secret_key
+    db_endpoint     = aws_db_instance.demo1_primary_db.address
+    db_name         = var.db_creds.db_name
+    db_user         = var.db_creds.username
+    db_password     = var.db_creds.password
+  })
 
   network_interface {
     network_interface_id = aws_network_interface.ec2_nic1_as1.id
@@ -398,14 +417,14 @@ resource "aws_instance" "demo1_app_server1" {
     Env  = "${var.env}"
   }
 
-  provisioner "local-exec" {
-    command = templatefile("${var.host_os}-ssh-config.tpl", {
-      hostname     = self.public_ip
-      user         = "ubuntu"
-      identityfile = "~/.ssh/demo1Ec2Key"
-    })
-    interpreter = var.host_os == "windows" ? ["PowerShell", "-Command"] : ["bash", "-c"]
-  }
+  # provisioner "local-exec" {
+  #   command = templatefile("${var.host_os}-ssh-config.tpl", {
+  #     hostname     = self.public_ip
+  #     user         = "ubuntu"
+  #     identityfile = "~/.ssh/demo1Ec2Key"
+  #   })
+  #   interpreter = var.host_os == "windows" ? ["PowerShell", "-Command"] : ["bash", "-c"]
+  # }
 }
 
 resource "aws_db_subnet_group" "demo1_db_subnet_group" {
